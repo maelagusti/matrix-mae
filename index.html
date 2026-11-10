@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
 <meta name="theme-color" content="#000000">
 <meta name="robots" content="noindex">
 <title>Anomalie temporelle</title>
@@ -255,12 +255,28 @@ html,body{
 #blue.on .blue-text{ animation:boot 1.1s linear .35s backwards; }
 #blue.on .cur{ animation:blink 1s steps(1) 1.2s infinite; }
 
+/* ---------- Bouton discret "Retour au dilemme" (toutes les pages sauf l'accueil) ---------- */
+.btn-home{
+  position:absolute; z-index:5;
+  top:calc(var(--safe-t) + 6px); left:50%; transform:translateX(-50%); white-space:nowrap;
+  min-width:44px; min-height:44px; padding:0 max(10px, calc(var(--u) * 24));
+  display:flex; align-items:center; justify-content:center; cursor:pointer; border:0; background:transparent;
+  font-family:"Press Start 2P",ui-monospace,monospace; font-size:max(9px, calc(var(--u) * 22));
+  color:rgba(255,255,255,.42);
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  opacity:0; visibility:hidden; transition:opacity .35s ease, visibility 0s linear .35s, color .15s ease;
+}
+#root.away .btn-home{ opacity:1; visibility:visible; transition:opacity .35s ease, color .15s ease; }
+.btn-home:hover,.btn-home:active{ color:#fff; }
+.btn-home:focus-visible{ outline:2px solid #fff; outline-offset:-4px; }
+
 /* ---------- Écran des missions ---------- */
 #challenges{
   --amber:#00ff73; --amber-rgb:0,255,115;   /* couleur d'accent des missions */
   z-index:3; background:rgba(6,6,10,.94);
   display:flex; flex-direction:column; align-items:center;
   overflow-y:auto; overscroll-behavior:contain;
+  padding-bottom:calc(var(--safe-b) + var(--kb, 0px));   /* place réservée au clavier */
 }
 .mission{
   width:calc(var(--w) * .88); margin:auto 0; padding:calc(var(--u) * 60) 0;
@@ -329,10 +345,6 @@ html,body{
 .futur-note{ margin:calc(var(--u) * 24) 0 0; font-family:"VT323",ui-monospace,monospace; font-size:max(15px, calc(var(--u) * 50)); line-height:1.1; color:rgba(255,255,255,.6); text-align:center; }
 .futur textarea::placeholder{ color:rgba(255,255,255,.4); }
 
-/* ---------- Mouvement réduit ---------- */
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{ animation:none !important; transition-duration:.01ms !important; }
-}
 </style>
 </head>
 
@@ -397,6 +409,8 @@ html,body{
     </div>
   </template>
 
+  <button id="btn-home" class="btn-home" type="button" aria-label="Retour au dilemme">RETOUR AU DILEMME</button>
+
   <div id="flash"></div>
 </div>
 
@@ -405,7 +419,6 @@ html,body{
 (() => {
   const canvas = document.getElementById('matrix');
   const ctx = canvas.getContext('2d');
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const CHARS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789';
   const FPS = 24, STEP = 1000 / FPS;
   let W = 0, H = 0, FS = 16, cols = 0, y = [], v = [], last = 0;
@@ -421,7 +434,6 @@ html,body{
     cols = Math.ceil(W / FS);
     y = Array.from({length: cols}, () => Math.random() * -(H / FS));
     v = Array.from({length: cols}, () => 0.45 + Math.random() * 0.55);
-    if (reduced) { for (let i = 0; i < 140; i++) draw(); }
   }
 
   function draw() {
@@ -452,7 +464,7 @@ html,body{
 
   window.addEventListener('resize', resize);
   resize();
-  if (!reduced) requestAnimationFrame(loop);
+  requestAnimationFrame(loop);
 })();
 
 /* ============ Séquence d'ouverture ============ */
@@ -470,7 +482,6 @@ html,body{
 const Missions = (() => {
   const $ = id => document.getElementById(id);
   const titleEl = $('m-title'), bodyEl = $('m-body'), textEl = $('m-text'), extraEl = $('m-extra'), btn = $('btn-change');
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const HIDE_CHRONO_WHILE_RUNNING = false;   // true = le chrono se cache pendant qu'il tourne (difficile !)
 
   // Pour modifier ou ajouter une mission : une ligne ici (extra = modèle <template> à afficher)
@@ -537,7 +548,6 @@ const Missions = (() => {
       do { next = Math.floor(Math.random() * MISSIONS.length); } while (next === current && MISSIONS.length > 1);
     }
     current = next; bodyEl.hidden = true; btn.disabled = true;
-    if (reduced) { render(next); return; }
 
     const n = MISSIONS.length, steps = 12, seq = [];
     seq[steps - 1] = next;
@@ -551,44 +561,108 @@ const Missions = (() => {
     })();
   }
 
+  function stop() { clearTimeout(timer); if (cleanup) { cleanup(); cleanup = null; } }
   btn.addEventListener('click', () => start());
-  return { start, indexOf: id => MISSIONS.findIndex(m => m.id === id) };
+  return { start, stop, indexOf: id => MISSIONS.findIndex(m => m.id === id) };
 })();
 
-/* ============ Choix des pilules ============ */
+/* ============ Clavier : il recouvre la page, la mise en page ne rétrécit pas ============ */
 (() => {
+  const root = document.getElementById('root');
+  const ch = document.getElementById('challenges');
+  const docEl = document.documentElement;
+  const vv = window.visualViewport;
+  let stableH = 0, frozen = false, ta = null;
+
+  const measure = () => { if (!frozen) stableH = root.getBoundingClientRect().height; };
+  window.addEventListener('resize', measure);
+  window.addEventListener('orientationchange', () => setTimeout(measure, 300));
+  measure();
+
+  // met le champ de texte au-dessus du clavier
+  function adjust() {
+    if (!frozen || !vv) return;
+    const kb = Math.max(0, Math.round(stableH - vv.height));
+    ch.style.setProperty('--kb', (kb > 100 ? kb : 0) + 'px');
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      const bottom = vv.offsetTop + vv.height - 16;
+      const r = ta.getBoundingClientRect();
+      if (r.bottom > bottom) ch.scrollTop += r.bottom - bottom;
+    });
+  }
+
+  document.addEventListener('focusin', e => {
+    if (e.target.tagName !== 'TEXTAREA') return;
+    ta = e.target;
+    if (!frozen) {
+      if (!stableH) measure();
+      docEl.style.setProperty('--vh100', stableH + 'px');   // fige la hauteur : plus de rétrécissement
+      frozen = true;
+      if (vv) { vv.addEventListener('resize', adjust); vv.addEventListener('scroll', adjust); }
+    }
+    adjust(); setTimeout(adjust, 150); setTimeout(adjust, 450);
+  });
+
+  document.addEventListener('focusout', e => {
+    if (e.target !== ta) return;
+    frozen = false; ta = null;
+    if (vv) { vv.removeEventListener('resize', adjust); vv.removeEventListener('scroll', adjust); }
+    docEl.style.removeProperty('--vh100');
+    ch.style.setProperty('--kb', '0px');
+    setTimeout(() => { window.scrollTo(0, 0); measure(); }, 100);
+  });
+})();
+
+/* ============ Choix des pilules et navigation ============ */
+(() => {
+  const root = document.getElementById('root');
   const home = document.getElementById('home');
   const sync = document.getElementById('sync');
+  const blue = document.getElementById('blue');
   const challenges = document.getElementById('challenges');
   const flash = document.getElementById('flash');
   let busy = false;
+  const timers = [];
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
 
   const show = (el, on) => { el.classList.toggle('on', on); el.setAttribute('aria-hidden', String(!on)); };
-
-  const blue = document.getElementById('blue');
+  const away = on => root.classList.toggle('away', on);
+  const buzz = ms => { if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) navigator.vibrate(ms); };
 
   // Pilule bleue : fondu vers la page "Vous restez enfermé dans la matrice..."
   document.getElementById('btn-blue').addEventListener('click', () => {
     if (busy) return; busy = true;
-    show(home, false);
-    setTimeout(() => show(blue, true), 400);
+    away(true); show(home, false);
+    later(() => show(blue, true), 400);
   });
 
-  // Pilule rouge : flash -> synchronisation -> écran des défis
+  // Pilule rouge : flash -> synchronisation -> tirage d'une mission
   document.getElementById('btn-red').addEventListener('click', () => {
     if (busy) return; busy = true;
-    if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) navigator.vibrate(30);
+    buzz(30);
+    away(true);
     flash.classList.add('go');
-    setTimeout(() => show(home, false), 160);
-    setTimeout(() => show(sync, true), 450);
-    setTimeout(() => { show(sync, false); show(challenges, true); }, 450 + 1100);
-    setTimeout(() => Missions.start(), 450 + 1100 + 400);
+    later(() => show(home, false), 160);
+    later(() => show(sync, true), 450);
+    later(() => { show(sync, false); show(challenges, true); }, 450 + 1100);
+    later(() => Missions.start(), 450 + 1100 + 400);
   });
 
-  // Aperçu direct d'une mission : index.html#barbichette | #pfc | #temps | #futur
+  // Bouton discret : retour à l'accueil depuis n'importe quelle page
+  document.getElementById('btn-home').addEventListener('click', () => {
+    timers.forEach(clearTimeout); timers.length = 0;
+    Missions.stop();
+    flash.classList.remove('go');
+    [sync, blue, challenges].forEach(el => show(el, false));
+    show(home, true); away(false);
+    busy = false;
+  });
+
+  // Aperçu direct d'une mission : index.html#barbichette | #pfc | #temps | #futur | #selfie
   const forced = Missions.indexOf(location.hash.slice(1));
   if (forced >= 0) {
-    busy = true; show(home, false); show(challenges, true); Missions.start(forced);
+    busy = true; away(true); show(home, false); show(challenges, true); Missions.start(forced);
   }
 })();
 </script>
